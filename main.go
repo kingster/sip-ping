@@ -26,20 +26,20 @@ var debug = flag.Bool("debug", false, "Do debug logging")
 var log stimlog.StimLogger = stimlog.GetLogger()
 
 const WS_OPTIONS = `OPTIONS sip:monitor@none SIP/2.0
-Via: SIP/2.0/{{PROTOC}} 81okseq92jb7.invalid;branch=z9hG4bK5964427
+Via: SIP/2.0/{{PROTOC}} 81okseq92jb7.invalid;branch={{branch}}
 To: <sip:ba_user@none>
-From: <sip:anonymous.8scs48@anonymous.invalid>;tag=fql2c8mlg3
+From: <sip:anonymous.8scs48@anonymous.invalid>;tag={{tag}}
 Call-ID: {{callId}}
 CSeq: {{seq}} OPTIONS
 Content-Length: 0
 
 ` // two newlines required to signal end of request
 
-const TCP_OPTIONS = `OPTIONS sip:host@invalid:1739;transport={{proto}} SIP/2.0
-Via: SIP/2.0/{{PROTOC}} {{localaddr}};branch=z9hG4bKr1t13cmvZDjtg
+const TCP_OPTIONS = `OPTIONS sip:user@{{hostaddr}};transport={{proto}} SIP/2.0
+Via: SIP/2.0/{{PROTOC}} {{localaddr}};branch={{branch}}
 Max-Forwards: 70
-From: "" <sip:monitor@invalid>
-To: <sip:host@invalid;transport={{proto}}>
+From: "" <sip:monitor@invalid>;tag={{tag}}
+To: <sip:user@invalid;transport={{proto}}>
 Call-ID: {{callId}}
 CSeq: {{seq}} OPTIONS
 Content-Length: 0
@@ -55,11 +55,14 @@ func randString(n int) string {
 	return string(bytes)
 }
 
-func renderRequest(options string, la string, protocol string) string {
+func renderRequest(options string, target string, la string, protocol string) string {
 	var bytes = make([]byte, 2)
 	rand.Read(bytes)
 	seq := binary.BigEndian.Uint16(bytes)
 	req := strings.Replace(options, "{{callId}}", randString(20), -1)
+	req = strings.Replace(req, "{{tag}}", randString(10), -1)
+	req = strings.Replace(req, "{{branch}}", randString(10), -1)
+	req = strings.Replace(req, "{{hostaddr}}", target, -1)
 	req = strings.Replace(req, "{{localaddr}}", la, -1)
 	req = strings.Replace(req, "{{PROTOC}}", strings.ToUpper(protocol), -1)
 	req = strings.Replace(req, "{{proto}}", strings.ToLower(protocol), -1)
@@ -153,7 +156,7 @@ func querySIP(url *url.URL, skipVerify *bool, request chan string, response chan
 	}
 	defer conn.Close()
 	log.Debug("Rendering SIP Request")
-	req := renderRequest(TCP_OPTIONS, conn.LocalAddr().String(), url.Scheme)
+	req := renderRequest(TCP_OPTIONS,url.Host, conn.LocalAddr().String(), url.Scheme)
 	log.Debug("Request Rendered, writting request")
 	_, err = conn.Write([]byte(req))
 	if err != nil {
@@ -197,7 +200,7 @@ func queryWS(url *url.URL, request chan string, response chan sipResponse, respo
 
 	defer c.Close()
 
-	req := renderRequest(WS_OPTIONS, "", url.Scheme)
+	req := renderRequest(WS_OPTIONS,"", "", url.Scheme)
 
 	err = c.WriteMessage(websocket.TextMessage, []byte(req))
 	if err != nil {
